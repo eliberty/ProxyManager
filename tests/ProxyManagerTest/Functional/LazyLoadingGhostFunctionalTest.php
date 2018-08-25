@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ProxyManagerTest\Functional;
 
-use PHPUnit_Framework_MockObject_MockObject as Mock;
 use PHPUnit\Framework\TestCase;
+use PHPUnit_Framework_MockObject_MockObject as Mock;
 use ProxyManager\Generator\ClassGenerator;
 use ProxyManager\Generator\Util\UniqueIdentifierGenerator;
 use ProxyManager\GeneratorStrategy\EvaluatingGeneratorStrategy;
@@ -22,6 +22,7 @@ use ProxyManagerTestAsset\ClassWithMethodWithByRefVariadicFunction;
 use ProxyManagerTestAsset\ClassWithMethodWithVariadicFunction;
 use ProxyManagerTestAsset\ClassWithMixedProperties;
 use ProxyManagerTestAsset\ClassWithMixedPropertiesAndAccessorMethods;
+use ProxyManagerTestAsset\ClassWithMixedTypedProperties;
 use ProxyManagerTestAsset\ClassWithParentHint;
 use ProxyManagerTestAsset\ClassWithPrivateProperties;
 use ProxyManagerTestAsset\ClassWithProtectedProperties;
@@ -664,6 +665,34 @@ class LazyLoadingGhostFunctionalTest extends TestCase
         }
     }
 
+    public function testByRefInitializationOfTypedProperties() : void
+    {
+        $proxyName = $this->generateProxy(ClassWithMixedTypedProperties::class);
+        /* @var $proxy ClassWithMixedTypedProperties */
+        $proxy     = $proxyName::staticProxyConstructor(
+            function ($proxy, $method, $params, & $initializer, array $properties) {
+                $initializer = null;
+                $properties["\0" . ClassWithMixedTypedProperties::class . "\0privateStringProperty"] = 'private0';
+                $properties["\0*\0protectedStringProperty"] = 'protected0';
+                $properties['publicStringProperty'] = 'public0';
+            }
+        );
+
+        $reflectionClass = new ReflectionClass(ClassWithMixedTypedProperties::class);
+
+        $properties = Properties::fromReflectionClass($reflectionClass)->getInstanceProperties();
+
+        $privateProperty   = $properties["\0" . ClassWithMixedTypedProperties::class . "\0privateStringProperty"];
+        $protectedProperty = $properties["\0*\0protectedStringProperty"];
+
+        $privateProperty->setAccessible(true);
+        $protectedProperty->setAccessible(true);
+
+        self::assertSame('private0', $privateProperty->getValue($proxy));
+        self::assertSame('protected0', $properties["\0*\0protectedStringProperty"]->getValue($proxy));
+        self::assertSame('public0', $proxy->publicStringProperty);
+    }
+
     /**
      * @group 115
      * @group 175
@@ -692,12 +721,12 @@ class LazyLoadingGhostFunctionalTest extends TestCase
 
     public function testInitializeProxyWillReturnTrueOnSuccessfulInitialization() : void
     {
-        $proxyName = $this->generateProxy(ClassWithMixedProperties::class);
+        $proxyName = $this->generateProxy(ClassWithMixedTypedProperties::class);
 
         /* @var $proxy GhostObjectInterface */
         $proxy = $proxyName::staticProxyConstructor($this->createInitializer(
-            ClassWithMixedProperties::class,
-            new ClassWithMixedProperties()
+            ClassWithMixedTypedProperties::class,
+            new ClassWithMixedTypedProperties()
         ));
 
         self::assertTrue($proxy->initializeProxy());
@@ -746,6 +775,7 @@ class LazyLoadingGhostFunctionalTest extends TestCase
                     self::isInstanceOf(GhostObjectInterface::class),
                     self::isInstanceOf($className)
                 ));
+            ;
         }
 
         return function (
@@ -761,6 +791,10 @@ class LazyLoadingGhostFunctionalTest extends TestCase
             $reflectionClass = new ReflectionClass($realInstance);
 
             foreach (Properties::fromReflectionClass($reflectionClass)->getInstanceProperties() as $property) {
+                if (! self::isPropertyInitialized($realInstance, $property)) {
+                    continue;
+                }
+
                 $property->setAccessible(true);
                 $property->setValue($proxy, $property->getValue($realInstance));
             }
@@ -1352,5 +1386,15 @@ class LazyLoadingGhostFunctionalTest extends TestCase
         $proxy->increment($increment);
 
         self::assertSame($initialCounter + $increment, $proxy->counter);
+    }
+
+    private static function isPropertyInitialized(object $object, ReflectionProperty $property) : bool
+    {
+        return array_key_exists(
+            ($property->isProtected() ? "\0*\0" : '')
+            . ($property->isPrivate() ? "\0" . $property->getDeclaringClass()->getName() . "\0" : '')
+            . $property->getName(),
+            (array) $object
+        );
     }
 }

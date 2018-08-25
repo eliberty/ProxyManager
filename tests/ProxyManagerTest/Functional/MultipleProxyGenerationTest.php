@@ -9,6 +9,8 @@ use ProxyManager\Factory\AccessInterceptorScopeLocalizerFactory;
 use ProxyManager\Factory\AccessInterceptorValueHolderFactory;
 use ProxyManager\Factory\LazyLoadingGhostFactory;
 use ProxyManager\Factory\LazyLoadingValueHolderFactory;
+use ProxyManager\FileLocator\FileLocator;
+use ProxyManager\GeneratorStrategy\FileWriterGeneratorStrategy;
 use ProxyManager\Proxy\AccessInterceptorInterface;
 use ProxyManager\Proxy\GhostObjectInterface;
 use ProxyManager\Proxy\ValueHolderInterface;
@@ -22,6 +24,7 @@ use ProxyManagerTestAsset\ClassWithMagicMethods;
 use ProxyManagerTestAsset\ClassWithMethodWithByRefVariadicFunction;
 use ProxyManagerTestAsset\ClassWithMethodWithVariadicFunction;
 use ProxyManagerTestAsset\ClassWithMixedProperties;
+use ProxyManagerTestAsset\ClassWithMixedTypedProperties;
 use ProxyManagerTestAsset\ClassWithParentHint;
 use ProxyManagerTestAsset\ClassWithPrivateProperties;
 use ProxyManagerTestAsset\ClassWithProtectedProperties;
@@ -59,10 +62,14 @@ class MultipleProxyGenerationTest extends TestCase
      */
     public function testCanGenerateMultipleDifferentProxiesForSameClass(string $className) : void
     {
-        $ghostProxyFactory                      = new LazyLoadingGhostFactory();
-        $virtualProxyFactory                    = new LazyLoadingValueHolderFactory();
-        $accessInterceptorFactory               = new AccessInterceptorValueHolderFactory();
-        $accessInterceptorScopeLocalizerFactory = new AccessInterceptorScopeLocalizerFactory();
+        $config = new \ProxyManager\Configuration();
+        $config->setProxiesTargetDir(__DIR__ . '/../../../rfc-test-proxies');
+        $config->setGeneratorStrategy(new FileWriterGeneratorStrategy(new FileLocator($config->getProxiesTargetDir())));
+
+        $ghostProxyFactory                      = new LazyLoadingGhostFactory($config);
+        $virtualProxyFactory                    = new LazyLoadingValueHolderFactory($config);
+        $accessInterceptorFactory               = new AccessInterceptorValueHolderFactory($config);
+        $accessInterceptorScopeLocalizerFactory = new AccessInterceptorScopeLocalizerFactory($config);
         $initializer                            = function () {
         };
 
@@ -108,6 +115,7 @@ class MultipleProxyGenerationTest extends TestCase
             [ClassWithFinalMagicMethods::class],
             [ClassWithByRefMagicMethods::class],
             [ClassWithMixedProperties::class],
+            [ClassWithMixedTypedProperties::class],
             [ClassWithPrivateProperties::class],
             [ClassWithProtectedProperties::class],
             [ClassWithPublicProperties::class],
